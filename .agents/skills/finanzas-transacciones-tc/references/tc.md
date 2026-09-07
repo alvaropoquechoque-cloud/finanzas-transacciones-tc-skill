@@ -1,28 +1,118 @@
-# Tipo de cambio
+# Tipo de cambio a USD
 
-## Reglas vigentes
+## Propósito
 
-- USD → 1
-- SOL → 0.28 mientras esa sea la política vigente en el Sheet
-- BOB → tipo de cambio oficial BCB según la fecha de la transacción
-- Otras monedas → TC manual
+Definir cómo convertir cada transacción a USD dentro del modelo financiero de Sommos.
 
-## Conversión a USD
+La fuente viva es el Google Sheet:
 
-Para BOB:
+- Spreadsheet: `Finanzas Sommos — Workflow y Control`
+- Spreadsheet ID: `1RXy19WZMPQePflFaFeIIHnh09BpJbwOnk6Wumw8bW4E`
 
-`Monto USD = Monto BOB / TC`
+Pestañas relevantes:
 
-Para monedas distintas de USD y BOB:
+- `Transacciones`
+- `TC BCB`
 
-`Monto USD = Monto original × TC`
+## Columnas relevantes en Transacciones
 
-## Fechas sin cotización
+Trabajar por nombre de encabezado, no por posición histórica:
 
-Cuando la fecha cae en fin de semana o feriado, usar el último tipo de cambio oficial disponible igual o anterior a la fecha de la transacción.
+- Fecha
+- Moneda
+- Monto original
+- TC a USD
+- Monto USD
+- TC manual (otras)
 
-## Reglas de seguridad
+Antes de escribir fórmulas o datos, leer los encabezados actuales.
 
-- No reemplazar silenciosamente un TC histórico ya conciliado.
-- Antes de modificar TC, verificar `TC BCB`, `Transacciones` y el efecto en `Monto USD`.
-- Si falta TC para una moneda no soportada automáticamente, usar el campo de TC manual.
+## Reglas de conversión
+
+### USD
+
+`TC a USD = 1`
+
+`Monto USD = Monto original`
+
+---
+
+### SOL
+
+Se utiliza el TC fijo definido actualmente por el modelo:
+
+`TC a USD = 0.28`
+
+`Monto USD = Monto original × 0.28`
+
+No cambiar esta regla sin instrucción explícita del usuario.
+
+---
+
+### BOB
+
+Para bolivianos se utiliza el `TCO vigente` de la pestaña `TC BCB` correspondiente a la fecha de la transacción.
+
+Conversión:
+
+`Monto USD = Monto BOB / TCO vigente`
+
+La búsqueda debe utilizar la fecha de la transacción.
+
+Si el día no tiene publicación oficial por fin de semana, feriado u otra ausencia de cotización, usar el último TCO oficial disponible anterior o igual a esa fecha.
+
+No utilizar automáticamente el TC del día actual para una transacción histórica.
+
+## TC BCB
+
+La pestaña `TC BCB` mantiene:
+
+- Fecha
+- TCO publicado BCB
+- TCO vigente
+
+`TCO vigente` arrastra el último valor oficial disponible para cubrir días sin publicación.
+
+La tabla existente debe preservarse.
+
+Antes de modificarla:
+
+1. leer fórmulas actuales;
+2. verificar el rango de fechas;
+3. confirmar que no existan errores;
+4. evitar sobrescribir datos oficiales o excepciones cargadas manualmente.
+
+## Otras monedas
+
+Para monedas distintas de:
+
+- USD
+- SOL
+- BOB
+
+utilizar el campo:
+
+`TC manual (otras)`
+
+No inventar un tipo de cambio.
+
+Si falta el TC manual:
+
+- mantener `TC a USD` sin valor;
+- no estimar `Monto USD`;
+- informar que falta el dato necesario.
+
+## Fórmula conceptual de TC
+
+```text
+Si moneda = USD:
+    TC = 1
+
+Si moneda = SOL:
+    TC = 0.28
+
+Si moneda = BOB:
+    TC = último TCO vigente <= fecha de transacción
+
+En cualquier otra moneda:
+    TC = TC manual (otras)
