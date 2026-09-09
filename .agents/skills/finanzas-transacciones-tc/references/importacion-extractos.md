@@ -1,373 +1,516 @@
-# Importación de extractos bancarios
+# Finanzas Sommos — Importación de extractos bancarios
 
-## Objetivo
+## Propósito
 
-Definir cómo convertir extractos bancarios y estados de cuenta en movimientos confiables dentro de `Transacciones`.
+Definir cómo convertir extractos bancarios y estados de cuenta en movimientos confiables dentro de:
 
-La importación debe preservar trazabilidad, evitar duplicados y permitir que las vistas dependientes se actualicen desde una sola fuente de verdad.
+`Transacciones`
 
-## Fuente de verdad
+La importación debe garantizar:
 
-`Transacciones` es la fuente de verdad operativa.
+- completitud;
+- trazabilidad;
+- deduplicación;
+- TC correcto;
+- correcta identificación de pagos/cobros;
+- transferencias internas correctas;
+- conciliación bancaria.
 
-Un extracto bancario:
-- confirma movimientos realizados;
-- ayuda a completar fecha, monto, banco/cuenta y conciliación;
-- no debe alimentar directamente `CxC Mensual`, `CxP Mensual`, `Real S&A`, `Operative incomes`, `Bancos`, `Runway Mensual` ni `Dashboard`.
+---
 
-Las vistas derivadas deben actualizarse desde `Transacciones`.
+# Fuente de verdad
 
-## Flujo estándar
+`Transacciones` es la fuente de verdad para:
 
-1. Recibir el extracto.
-2. Identificar banco/cuenta y periodo.
-3. Leer todos los movimientos.
-4. Normalizar fechas, moneda, descripción y monto.
-5. Buscar duplicados en `Transacciones`.
-6. Identificar si cada movimiento es:
-   - ingreso;
-   - egreso;
-   - transferencia interna;
-   - comisión bancaria;
-   - conversión de moneda;
-   - pago/cobro de una obligación existente.
-7. Registrar únicamente movimientos que no existan.
-8. Completar o actualizar transacciones existentes cuando el extracto confirme su pago/cobro.
-9. Aplicar categorización.
-10. Aplicar TC según las reglas vigentes.
-11. Conciliar contra `Bancos`.
-12. Verificar vistas dependientes.
-
-## Regla de no duplicación
-
-Antes de insertar un movimiento, buscar coincidencias utilizando el mayor número posible de estos atributos:
-
-- fecha;
+- movimientos bancarios;
+- cash realizado;
+- pagos;
+- cobros;
 - banco/cuenta;
+- fecha efectiva;
 - moneda;
 - monto;
-- descripción;
-- contraparte;
-- tipo;
-- cuenta origen;
-- cuenta destino.
+- conciliación.
 
-No asumir que una descripción diferente implica una transacción diferente.
+Pero no es la fuente única del devengo.
 
-Si un movimiento bancario corresponde a una CxC o CxP ya registrada como `Pendiente`, no crear una segunda transacción para liquidarla.
+El modelo separa:
 
-Se debe actualizar la transacción existente:
-- estado;
-- fecha de pago/cobro;
-- conciliación;
-- cuenta bancaria involucrada;
-- datos faltantes que el extracto permita confirmar.
+`Operative incomes`
+→ devengo de ingresos
 
-## Una fila por movimiento bancario
+`Real S&A`
+→ devengo de gastos
 
-Como regla general, cada movimiento independiente del extracto debe conservarse como una fila independiente en `Transacciones`.
+`Sueldos 2026`
+→ devengo de nómina
 
-No agrupar varios movimientos solo porque:
-- pertenecen al mismo proveedor;
-- ocurrieron el mismo día;
-- corresponden al mismo concepto;
-- forman parte de una misma transferencia mayor.
+`Transacciones`
+→ cash
 
-Esto permite conciliar exactamente contra el banco.
+Por lo tanto:
 
-Ejemplo:
+un extracto confirma que hubo movimiento de dinero.
 
-Si una plataforma entrega:
-- USD 3,996
-- USD 2
+No determina automáticamente cuándo debe reconocerse el ingreso o gasto en P&L.
 
-como dos movimientos bancarios separados, deben mantenerse como dos movimientos separados si así aparecen en el extracto.
+---
 
-## Transferencias internas
+# Flujo estándar
 
-Una transferencia entre cuentas propias no representa ingreso ni gasto.
+`Extracto`
+→ identificación de cuenta y periodo
+→ extracción
+→ normalización
+→ búsqueda de obligaciones existentes
+→ deduplicación
+→ registro/actualización en Transacciones
+→ TC
+→ categorización
+→ conciliación
+→ Bancos
+→ validación de dependencias
 
-Debe registrarse como:
+---
 
-- Tipo: `Transferencia interna`
-- Categoría: `Transferencias internas`
+# Antes de importar
 
-Además, completar cuando sea posible:
-- `Cuenta origen`
-- `Cuenta destino`
-- `Detalle transferencia`
+Identificar:
 
-La dirección de la transferencia es obligatoria para que la conciliación bancaria pueda sumar correctamente entradas y salidas por cuenta.
+- banco;
+- cuenta;
+- moneda;
+- periodo;
+- fecha inicial;
+- fecha final;
+- si el extracto es completo o parcial;
+- saldo inicial;
+- saldo final;
+- créditos;
+- débitos.
 
-### Ejemplo
+Si falta información material:
 
-Si Meru envía fondos que posteriormente ingresan a Banco Sol mediante un intermediario como RemotePay:
+no declarar el periodo como conciliado.
 
-Movimiento de salida:
-- Cuenta origen: Meru
-- Cuenta destino: Banco Sol o cuenta intermedia identificada
-- Tipo: Transferencia interna
+---
 
-Movimiento de entrada:
-- Banco/cuenta: Banco Sol
-- Tipo: Transferencia interna
-- Cuenta origen: Meru o intermediario confirmado
-- Cuenta destino: Banco Sol
+# Extractos conocidos
 
-No reconocer el traslado como ingreso operativo.
+El workflow puede recibir extractos de cuentas como:
 
-## Intermediarios de pago
-
-Cuando el extracto muestre un intermediario como:
-- RemotePay;
-- procesador de pagos;
-- billetera;
-- banco corresponsal;
-
-no asumir automáticamente que el intermediario es el cliente o proveedor económico.
-
-Se debe separar:
-
-1. contraparte bancaria;
-2. contraparte económica;
-3. cuenta origen/destino;
-4. concepto real.
-
-Ejemplo:
-
-Una entrada de `RemotePay Solutions` puede ser una transferencia proveniente de Meru y no un ingreso de RemotePay.
-
-## Comisiones bancarias
-
-Una comisión cobrada por el banco o plataforma debe registrarse como un movimiento separado cuando el extracto la muestre de forma independiente.
-
-Categoría habitual:
-`Bank fees`
-
-No modificar artificialmente el importe principal para hacer coincidir el neto recibido.
-
-Ejemplo:
-
-Si se enviaron USD 4,000 y el banco registra:
-- USD 3,998 recibidos;
-- USD 2 de comisión;
-
-preservar ambos componentes según el detalle bancario disponible.
-
-## Conversión de moneda
-
-No convertir manualmente el monto original del extracto.
-
-Registrar:
-- moneda original;
-- monto original;
-- TC correspondiente;
-- monto USD calculado.
-
-Reglas conocidas:
-- USD → TC 1
-- SOL → TC 0.28
-- BOB → TC oficial BCB de la fecha
-- otras monedas → TC manual cuando corresponda
-
-Para BOB, si la fecha cae en fin de semana o feriado, usar el último TC oficial disponible anterior o igual a la fecha.
-
-## Fecha del movimiento
-
-Usar la fecha efectiva mostrada por el extracto.
-
-No sustituirla por:
-- fecha de generación del estado de cuenta;
-- fecha de factura;
-- fecha de vencimiento.
-
-Si una factura pendiente se liquida con el movimiento:
-
-- conservar la fecha original de factura/transacción;
-- actualizar `Fecha pago / cobro` con la fecha bancaria real.
-
-Esto permite mantener simultáneamente:
-- devengamiento;
-- vencimiento;
-- fecha real de caja.
-
-## Pagos de CxP
-
-Si el extracto confirma el pago de una obligación ya existente:
-
-1. localizar la transacción pendiente;
-2. validar monto y contraparte;
-3. completar cuenta bancaria;
-4. completar `Fecha pago / cobro`;
-5. cambiar el estado a `Pagado/Cobrado`;
-6. marcar conciliación según corresponda.
-
-No crear un nuevo egreso si la obligación ya estaba registrada.
-
-## Cobros de CxC
-
-Si el extracto confirma el cobro de una cuenta ya existente:
-
-1. localizar la transacción pendiente;
-2. validar monto y contraparte;
-3. completar banco/cuenta;
-4. completar `Fecha pago / cobro`;
-5. cambiar el estado a `Pagado/Cobrado`;
-6. conciliar.
-
-No crear un segundo ingreso para representar el mismo cobro.
-
-## Pagos parciales
-
-Si el pago o cobro es parcial, no marcar automáticamente toda la obligación como liquidada.
-
-Primero determinar:
-- monto original;
-- monto pagado/cobrado;
-- saldo pendiente;
-- si el modelo permite dividir la obligación en componentes.
-
-No inventar una metodología de partición si no está definida.
-
-## Extractos incompletos
-
-Antes de cerrar un mes, confirmar que el extracto cubre el periodo completo.
-
-Si el archivo empieza o termina fuera del periodo esperado:
-- no asumir que no existieron movimientos;
-- marcar la conciliación como incompleta;
-- identificar qué fechas faltan.
-
-Ejemplo:
-un extracto que comienza el 3 de agosto no prueba que el 1 y 2 de agosto no tuvieron movimientos.
-
-## Descripciones bancarias
-
-Preservar información útil de la descripción original.
-
-La descripción normalizada debe permitir identificar:
-- contraparte;
-- concepto;
-- periodo cuando aplique;
-- número de factura si está disponible.
-
-No reemplazar toda la descripción bancaria con una etiqueta genérica si se pierde trazabilidad.
-
-## Estados de cuenta de proveedores
-
-Un estado de cuenta de proveedor no es un extracto bancario.
-
-Puede utilizarse para:
-- identificar facturas;
-- validar monto;
-- validar fecha;
-- validar proveedor;
-- completar CxP.
-
-Pero una factura o estado de cuenta no prueba por sí solo que el pago haya ocurrido.
-
-El pago debe confirmarse mediante:
-- extracto;
-- comprobante;
-- evidencia equivalente.
-
-## Categorización
-
-La importación no debe inventar categorías.
-
-Orden recomendado:
-
-1. buscar regla activa en `Reglas categorización`;
-2. usar una categoría válida de `Config`;
-3. si no existe coincidencia confiable, usar `Por categorizar`.
-
-Una importación puede completarse aunque la categoría quede temporalmente pendiente.
-
-La conciliación bancaria y la categorización son controles distintos.
-
-## Bancos y cuentas conocidas
-
-La denominación debe mantenerse consistente con los nombres utilizados actualmente en el modelo.
-
-Ejemplos conocidos:
 - Banco Sol
 - Brex
 - Brex Card
+- Brex Checking
+- Brex Treasury
 - Meru
-- Scotiabank
-- BCI
+- otras cuentas activas definidas en `Bancos`
 
-Antes de crear un nombre nuevo, revisar si la cuenta ya existe con otra denominación.
+La lista viva en el modelo prevalece.
 
-## Conciliación posterior a la importación
+No crear un nuevo nombre de cuenta antes de comprobar si ya existe.
 
-Después de importar un extracto, validar por banco y mes:
+---
 
-`Saldo final calculado = Saldo inicial + Entradas - Salidas`
+# Una fila por movimiento bancario
 
-Luego:
+Como regla general:
 
-`Diferencia = Saldo final banco - Saldo final calculado`
+cada movimiento independiente del extracto debe poder rastrearse individualmente.
 
-La diferencia esperada debe ser cero o estar dentro de la tolerancia documentada.
+No agrupar movimientos porque:
 
-No insertar movimientos artificiales para hacer que el banco concilie.
+- sean del mismo proveedor;
+- tengan misma fecha;
+- compartan categoría;
+- parezcan parte del mismo concepto.
 
-## Si existe una diferencia
+La trazabilidad bancaria tiene prioridad.
 
-Investigar en este orden:
+---
 
-1. movimientos faltantes;
-2. duplicados;
-3. transferencias internas sin origen/destino;
-4. movimientos registrados en banco incorrecto;
+# Duplicados
+
+Antes de insertar:
+
+buscar coincidencias por:
+
+- ID bancario;
+- banco/cuenta;
+- fecha;
+- moneda;
+- monto;
+- descripción;
+- referencia;
+- contraparte.
+
+Dos movimientos con mismo monto y fecha pueden ser legítimamente distintos.
+
+No eliminar uno sin evidencia.
+
+---
+
+# Obligaciones existentes
+
+Antes de crear una fila nueva por un pago/cobro:
+
+buscar si ya existe una obligación pendiente relacionada.
+
+Comparar:
+
+- descripción;
+- proveedor/cliente;
+- moneda;
+- monto;
+- fecha documental;
+- vencimiento;
+- proyecto;
+- soporte.
+
+Cuando el extracto confirme claramente el pago/cobro de una fila existente:
+
+actualizar esa fila con:
+
+- Banco/cuenta;
+- Estado pago;
+- Fecha pago/cobro;
+- Conciliación;
+- referencia bancaria.
+
+No crear automáticamente una segunda fila.
+
+---
+
+# Devengo vs cash
+
+## Cobro de cliente
+
+El devengo puede venir de:
+
+`Operative incomes`
+
+El extracto confirma:
+
+`Cobro`
+
+No mover el ingreso del P&L al mes del cobro.
+
+---
+
+# Pago a proveedor
+
+El devengo puede venir de:
+
+`Real S&A`
+
+El extracto confirma:
+
+`Pago`
+
+No mover el gasto al mes bancario.
+
+---
+
+# Pago de sueldo
+
+El devengo viene de:
+
+`Sueldos 2026`
+
+El pago se refleja en:
+
+`CxP Sueldos`
+
+y/o `Transacciones` según la arquitectura vigente.
+
+No reconocer nuevamente el gasto al pagar.
+
+---
+
+# Fecha
+
+Para un movimiento bancario nuevo:
+
+usar la fecha efectiva del extracto.
+
+Cuando liquida una obligación existente:
+
+- conservar la fecha documental;
+- conservar vencimiento;
+- registrar `Fecha pago / cobro` con la fecha del banco.
+
+No reemplazar la fecha de factura por la fecha bancaria.
+
+---
+
+# Moneda
+
+Preservar:
+
+- moneda original;
+- monto original.
+
+Después aplicar:
+
+- USD → 1
+- BOB → TC BCB aplicable
+- PEN/SOL → política vigente
+- otras → TC manual documentado
+
+No reemplazar el monto original por USD.
+
+---
+
+# Categorización
+
+La importación debe consultar:
+
+- `Config`
+- `Reglas categorización`
+
+Pero puede finalizar con:
+
+`Por categorizar`
+
+si no existe suficiente evidencia.
+
+Es mejor una transacción pendiente de clasificación que una categoría incorrecta.
+
+No utilizar categorización para cuadrar bancos.
+
+---
+
+# Transferencias internas
+
+Si el dinero se mueve entre cuentas propias:
+
+Tipo:
+
+`Transferencia interna`
+
+Categoría:
+
+`Transferencias internas`
+
+Completar cuando sea posible:
+
+- Cuenta origen
+- Cuenta destino
+- detalle
+
+No reconocer como ingreso/gasto.
+
+---
+
+# Intermediarios
+
+Nombres como procesadores, billeteras o intermediarios no identifican necesariamente a la contraparte económica.
+
+Separar:
+
+- contraparte bancaria;
+- cliente/proveedor económico;
+- cuenta origen;
+- cuenta destino;
+- concepto real.
+
+Ejemplo conocido:
+
+un movimiento mostrado por un intermediario puede ser en realidad una transferencia entre cuentas propias.
+
+---
+
+# Comisiones
+
+Si el extracto muestra una comisión separada:
+
+registrarla separadamente.
+
+No reducir artificialmente el importe principal.
+
+Categoría habitual:
+
+`Bank fees`
+
+cuando corresponda.
+
+No inventar comisiones para explicar diferencias.
+
+---
+
+# Reversiones
+
+Si existen:
+
+- cargo;
+- reversión;
+
+y ambos son movimientos bancarios reales:
+
+registrar ambos si son necesarios para reproducir el saldo.
+
+No netearlos simplemente porque el resultado consolidado sea cero.
+
+---
+
+# Pagos agrupados
+
+Un pago bancario puede cubrir varias facturas.
+
+Cuando exista soporte documental:
+
+puede ser necesario dividir la obligación por factura para preservar el devengo correcto.
+
+Caso conocido:
+
+PPO.
+
+Regla crítica:
+
+`SUMA de componentes = total del movimiento bancario`
+
+La fecha de pago puede ser común.
+
+Las fechas de factura/devengo pueden ser distintas.
+
+---
+
+# Pagos parciales
+
+No marcar toda una obligación como pagada cuando solo hubo un pago parcial.
+
+Determinar:
+
+- obligación inicial;
+- cash recibido/pagado;
+- saldo restante.
+
+No inventar splits sin respaldo.
+
+---
+
+# Importación extractos
+
+La pestaña:
+
+`Importación extractos`
+
+puede utilizarse como staging/auditoría técnica.
+
+Puede permanecer oculta.
+
+No es una segunda fuente contable.
+
+El movimiento validado debe terminar reflejado correctamente en:
+
+`Transacciones`
+
+---
+
+# Conciliación con Bancos
+
+Después de importar:
+
+validar por cuenta y periodo:
+
+`Saldo calculado = saldo inicial + entradas - salidas`
+
+y:
+
+`Diferencia = saldo real - saldo calculado`
+
+La diferencia esperada debe ser:
+
+`≈ 0`
+
+dentro de la tolerancia documentada.
+
+Nunca insertar un movimiento ficticio para obtener cero.
+
+---
+
+# Orden de investigación de diferencias
+
+Si Bancos no concilia, revisar:
+
+1. movimiento faltante;
+2. duplicado;
+3. transferencia interna mal identificada;
+4. cuenta incorrecta;
 5. fecha incorrecta;
-6. monto o moneda incorrectos;
-7. comisión bancaria faltante;
-8. tipo de cambio incorrecto;
-9. extracto incompleto.
+6. moneda/monto incorrectos;
+7. comisión faltante;
+8. reversión;
+9. TC;
+10. extracto parcial.
 
-## Verificación posterior
+No empezar cambiando categorías o creando ajustes.
 
-Después de cada importación revisar:
+---
 
-- `Transacciones`
-- `Bancos`
+# Mes cerrado
+
+Antes de modificar transacciones de un mes ya cerrado:
+
+- identificar el impacto;
+- revisar Bancos;
+- revisar CxC/CxP;
+- revisar Cash Flow;
+- revisar Balance Sheet.
+
+Actualmente agosto de 2026 es un mes cerrado y validado dentro del workflow.
+
+No modificarlo silenciosamente.
+
+---
+
+# Validación posterior
+
+Después de una importación revisar como mínimo:
+
+`Transacciones`
+
+`Bancos`
+
+y, cuando corresponda:
+
 - `CxC Mensual`
 - `CxP Mensual`
-- `Operative incomes`
-- `Real S&A`
+- `CxP Sueldos`
+- `Cash Flow`
+- `Balance Sheet`
 - `Runway Mensual`
 - `Dashboard`
 
-Buscar además:
-- `#REF!`
-- `#VALUE!`
-- `#N/A`
-- `#ERROR!`
+No esperar que `Operative incomes`, `Real S&A` o `Sueldos 2026` cambien únicamente porque entró un movimiento bancario.
 
-## Reglas de seguridad
+---
 
-- Leer encabezados actuales antes de escribir.
-- No asumir posiciones históricas de columnas.
-- No borrar movimientos existentes para reemplazarlos por el extracto.
-- No duplicar CxC/CxP al momento de cobrar o pagar.
-- No inventar país, responsable, cuenta, contraparte o fecha.
-- No modificar la categoría del usuario sin evidencia suficiente.
-- No forzar conciliaciones.
-- No confundir transferencias internas con ingreso o gasto.
-- No tratar una factura como evidencia de pago.
-- Si el extracto y el Sheet presentan una inconsistencia, investigar antes de corregir.
-- El Google Sheet vivo prevalece sobre snapshots históricos de GitHub.
+# Estado de cierre
 
-## Resultado esperado
+Una importación no se considera terminada solamente porque las filas fueron cargadas.
 
-Una importación se considera terminada cuando:
+Debe verificarse:
 
-- todos los movimientos relevantes del periodo están registrados;
-- no existen duplicados conocidos;
-- las transferencias tienen dirección correcta;
-- pagos y cobros existentes fueron vinculados a sus obligaciones;
-- el TC fue aplicado correctamente;
-- la cuenta bancaria concilia;
-- no se introdujeron errores en las vistas dependientes.
+- no duplicados;
+- TC correcto;
+- categorización válida o pendiente explícita;
+- transferencias identificadas;
+- saldo bancario conciliado;
+- filas leídas nuevamente;
+- ausencia de errores.
+
+---
+
+# Regla final
+
+El extracto es evidencia de:
+
+**cash**
+
+No es automáticamente evidencia del:
+
+**periodo contable de devengo**
+
+Mantener siempre esa separación.
