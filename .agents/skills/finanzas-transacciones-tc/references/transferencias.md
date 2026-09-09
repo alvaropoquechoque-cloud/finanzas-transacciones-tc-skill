@@ -1,333 +1,334 @@
-# Transferencias internas
+# Finanzas Sommos — Transferencias internas
 
 ## Propósito
 
-Documentar cómo registrar, identificar y conciliar movimientos de dinero entre cuentas propias de Sommos sin tratarlos como ingresos o gastos operativos.
+Definir cómo registrar y conciliar movimientos entre cuentas propias de Sommos sin tratarlos como ingresos, gastos, CxC o CxP.
 
-La fuente de verdad es la pestaña `Transacciones` del archivo financiero vigente.
+La fuente operativa es:
+
+`Transacciones`
+
+La conciliación se valida en:
+
+`Bancos`
 
 ---
 
-## Tipo correcto
+# Clasificación
 
-Las transferencias entre cuentas propias deben registrarse con:
+Una transferencia entre cuentas controladas por Sommos debe usar:
 
 `Tipo = Transferencia interna`
 
-No usar variantes como:
-- Transferencia
-- Internal transfer
-- Movimiento interno
+y:
 
-La lógica financiera y bancaria debe reconocer exactamente `Transferencia interna`.
+`Categoría = Transferencias internas`
+
+Utilizar siempre los valores exactos del Sheet vivo.
 
 ---
 
-## Categoría
-
-La categoría estándar es:
-
-`Transferencias internas`
+# Impacto financiero
 
 Una transferencia interna:
 
-- no es ingreso operativo;
-- no es gasto operativo;
-- no incrementa revenue;
-- no incrementa burn;
-- no debe afectar el P&L;
-- sí afecta los saldos de las cuentas bancarias involucradas.
+| Componente | Impacto |
+|---|---|
+| Banco origen | Disminuye |
+| Banco destino | Aumenta |
+| Cash consolidado | Sin cambio |
+| Ingresos P&L | No |
+| Gastos P&L | No |
+| CxC | No |
+| CxP | No |
+| Burn operativo | No |
+
+Pueden existir efectos separados por:
+
+- comisión;
+- diferencia cambiaria;
+- spread.
+
+Esos conceptos no deben esconderse dentro de la transferencia.
 
 ---
 
-## Campos relevantes en Transacciones
+# Dirección
 
-Para una transferencia interna deben revisarse especialmente:
+Toda transferencia debe poder interpretarse como:
 
-- `Fecha`
-- `Tipo`
-- `País`
-- `Categoría`
-- `Descripción`
-- `Moneda`
-- `Monto original`
-- `TC a USD`
-- `Monto USD`
-- `Cuenta / medio`
-- `Conciliación`
-- `Estado pago`
-- `Cuenta origen`
-- `Cuenta destino`
-- `Detalle transferencia`
-
-La estructura real de columnas debe leerse siempre en vivo antes de escribir.
-
----
-
-## Cuenta origen y cuenta destino
-
-Toda transferencia interna debe indicar su dirección.
+`Cuenta origen → Cuenta destino`
 
 Ejemplo:
 
 `Meru → Banco Sol`
 
-Debe registrarse como:
+Para Bancos:
 
-- Cuenta origen: `Meru`
-- Cuenta destino: `Banco Sol`
+- Meru = salida
+- Banco Sol = entrada
 
-Para la conciliación:
-
-- en `Meru` representa una salida;
-- en `Banco Sol` representa una entrada.
-
-Nunca inferir la dirección únicamente por el signo del monto si el extracto o la descripción no son suficientemente claros.
+No inferir dirección sin suficiente evidencia.
 
 ---
 
-## Regla de conciliación bancaria
+# Campos relevantes
 
-Una transferencia interna puede mover efectivo entre bancos sin modificar el cash consolidado total de Sommos.
+Revisar cuando existan:
 
-Conceptualmente:
+- Fecha
+- Banco/cuenta
+- Tipo
+- Categoría
+- Descripción
+- Moneda
+- Monto original
+- TC
+- Monto USD
+- Estado pago
+- Conciliación
+- Cuenta origen
+- Cuenta destino
+- Detalle transferencia
+- Fecha pago/cobro
 
-`Salida cuenta origen = - transferencia`
-
-`Entrada cuenta destino = + transferencia`
-
-A nivel consolidado:
-
-`Efecto neto esperado ≈ 0`
-
-Esto puede no ser exactamente cero cuando existen:
-
-- comisiones;
-- diferencias de cambio;
-- spreads;
-- cargos del intermediario.
-
-Esos conceptos deben registrarse por separado.
+Leer los encabezados vivos antes de escribir.
 
 ---
 
-## Transferencias entre monedas
+# Una fila económica
+
+Cuando la arquitectura vigente permite que una misma fila tenga:
+
+- Cuenta origen;
+- Cuenta destino;
+
+preferir una sola transacción económica para representar el traslado.
+
+La lógica de Bancos puede interpretar esa fila como:
+
+- salida en origen;
+- entrada en destino.
+
+No duplicar automáticamente la transferencia porque aparezca en ambos extractos.
+
+---
+
+# Excepción: arquitectura bancaria
+
+Si el modelo vivo requiere dos registros separados para representar ambos lados:
+
+seguir la estructura vigente.
+
+Antes de crear la segunda fila:
+
+- comprobar que no duplique el cash consolidado;
+- verificar referencias;
+- revisar la lógica de `Bancos`.
+
+No asumir una metodología sin leer el modelo actual.
+
+---
+
+# Transferencias entre monedas
 
 Una transferencia puede salir en una moneda y llegar en otra.
 
-Ejemplo conocido:
+Ejemplo:
 
 `Meru USD → Banco Sol BOB`
 
-En estos casos no exigir que el monto nominal de origen sea igual al monto nominal de destino.
+No exigir igualdad nominal.
 
 Validar:
 
-1. monto debitado en cuenta origen;
-2. monto acreditado en cuenta destino;
-3. tipo de cambio aplicado;
-4. comisión o diferencia existente;
-5. extractos de ambas cuentas.
+1. monto debitado;
+2. monto acreditado;
+3. TC;
+4. comisión;
+5. spread/diferencia;
+6. extractos de ambos lados.
 
-El movimiento interno sigue siendo una transferencia, mientras que una comisión debe ser un gasto independiente.
+La naturaleza principal sigue siendo transferencia interna.
 
 ---
 
-## Comisiones
+# Comisiones
 
-Nunca incluir una comisión dentro de `Transferencias internas` solo para hacer cuadrar ambos bancos.
+Si existe una comisión:
 
-Ejemplo conceptual:
+registrarla separadamente cuando esté demostrada.
 
-- salen USD 200 de Meru;
-- Banco Sol recibe el equivalente a USD 198;
-- USD 2 corresponden a comisión.
+No incluirla dentro de:
 
-Registrar:
+`Transferencias internas`
 
-### Transferencia
+solo para conseguir que ambas cuentas cuadren.
 
-`Tipo = Transferencia interna`
-
-por el movimiento principal.
-
-### Comisión
-
-Registrar un movimiento separado como gasto, usando la categoría correspondiente, por ejemplo:
+Categoría habitual:
 
 `Bank fees`
 
-o la categoría vigente definida en `Config`.
-
-No inventar una comisión si el extracto no la demuestra.
+cuando corresponda.
 
 ---
 
-## Intermediarios
+# Diferencias cambiarias
 
-Una transferencia entre cuentas propias puede aparecer en el banco bajo el nombre de un intermediario.
+Si existe una diferencia económica real por conversión:
 
-Ejemplo conocido:
+puede corresponder a:
 
-`RemotePay Solutions`
+`Exchange rate differences`
 
-El nombre del intermediario no convierte automáticamente el movimiento en ingreso de cliente o gasto.
+según la lógica contable vigente.
 
-Debe identificarse la realidad económica del movimiento:
-
-`cuenta propia → intermediario → cuenta propia`
-
-Si ese es el caso, sigue siendo una transferencia interna.
+No crear una diferencia cambiaria únicamente porque origen y destino tengan monedas distintas.
 
 ---
 
-## Una fila o dos filas
+# Intermediarios
 
-La prioridad es evitar duplicar flujo financiero.
+Una transferencia puede aparecer bajo el nombre de:
 
-### Cuando existe una sola fila
+- RemotePay;
+- procesador;
+- banco corresponsal;
+- billetera;
+- intermediario.
 
-Puede mantenerse una sola transacción con:
+El nombre mostrado por el banco no determina la naturaleza económica.
 
-- Cuenta origen
-- Cuenta destino
-- monto
-- detalle de transferencia
+Si el flujo real es:
 
-La lógica de `Bancos` debe interpretar esa misma fila como:
+`Cuenta propia → intermediario → cuenta propia`
 
-- salida para el origen;
-- entrada para el destino.
-
-Esta es la estructura preferida cuando el modelo ya soporta transferencias de doble efecto.
-
-### Cuando los extractos muestran movimientos distintos
-
-No crear dos transacciones económicas si ambas representan el mismo traslado de fondos, salvo que la arquitectura del Sheet lo requiera expresamente.
-
-Antes de añadir una segunda fila, buscar duplicados y revisar la lógica de conciliación.
+sigue siendo una transferencia interna.
 
 ---
 
-## Estado de pago
+# Estado de pago
 
-Una transferencia que realmente ocurrió debe estar en estado realizado según las opciones vigentes del Sheet.
+Una transferencia realizada debe tener el estado correspondiente a cash realizado según `Config`.
 
-Los movimientos pendientes no deben afectar los saldos bancarios.
+Una transferencia pendiente:
 
-Antes de registrar una transferencia como realizada, debe existir evidencia en el extracto o confirmación equivalente.
+no debe afectar Bancos como movimiento realizado.
 
----
-
-## Reglas para importar extractos
-
-Cuando se carga un extracto:
-
-1. buscar primero si el movimiento ya existe;
-2. identificar si corresponde a dinero entre cuentas propias;
-3. revisar descripción, contraparte y banco;
-4. determinar cuenta origen;
-5. determinar cuenta destino;
-6. asignar `Tipo = Transferencia interna`;
-7. asignar `Categoría = Transferencias internas`;
-8. separar cualquier comisión;
-9. conciliar ambas cuentas;
-10. verificar que el movimiento no haya afectado ingresos o burn.
+No marcar como realizada sin evidencia.
 
 ---
 
-## Detección de duplicados
+# Deduplicación
 
-Antes de registrar una transferencia revisar coincidencias por:
+Antes de registrar revisar:
 
 - fecha;
 - monto;
 - moneda;
 - cuenta origen;
 - cuenta destino;
+- referencia;
 - descripción;
-- contraparte;
-- referencia del extracto.
+- contraparte.
 
-Una transferencia puede aparecer en los extractos de ambas cuentas.
-
-Eso no significa automáticamente que deban existir dos registros económicos en `Transacciones`.
+La aparición del movimiento en ambos extractos no significa necesariamente que existan dos movimientos económicos.
 
 ---
 
-## Diferencias de conciliación
+# Conciliación
 
-Si un banco no concilia después de registrar una transferencia, revisar:
+Después de registrar una transferencia:
 
-1. si `Tipo` es exactamente `Transferencia interna`;
-2. si existe `Cuenta origen`;
-3. si existe `Cuenta destino`;
-4. si la dirección está invertida;
-5. si existe una comisión;
-6. si existe diferencia cambiaria;
-7. si falta la contraparte de la transferencia;
-8. si el movimiento está duplicado;
-9. si la fecha corresponde al extracto;
-10. si el movimiento está marcado como realizado.
+comprobar:
 
-Nunca inventar movimientos para llevar la diferencia a cero.
+- banco origen;
+- banco destino;
+- dirección;
+- estado;
+- monto;
+- TC;
+- posibles comisiones;
+- posible diferencia cambiaria;
+- duplicados.
 
----
+A nivel consolidado:
 
-## Impacto financiero
+`efecto de transferencia ≈ 0`
 
-| Componente | Transferencia interna |
-|---|---|
-| Banco origen | Disminuye |
-| Banco destino | Aumenta |
-| Cash consolidado | Sin cambio, salvo comisión/FX |
-| Ingresos | No |
-| Gastos | No |
-| Burn | No |
-| CxC | No |
-| CxP | No |
-| P&L | No |
-| Flujo entre cuentas | Sí |
+salvo costos asociados registrados por separado.
 
 ---
 
-## Ejemplos operativos conocidos
+# Casos conocidos
 
-### Meru → Banco Sol
+## Meru → Banco Sol
 
-Puede existir una salida en USD desde Meru y una entrada en BOB a Banco Sol mediante un intermediario.
+Puede existir:
 
-Registrar la transferencia según su realidad económica y separar cualquier comisión.
+- salida USD en Meru;
+- entrada BOB en Banco Sol;
+- intermediario en la descripción.
 
-### Movimientos ACH desde Brex
-
-Si un ACH representa dinero enviado desde Brex hacia otra cuenta propia, debe incluir correctamente `Cuenta origen` y `Cuenta destino`.
-
-Si el receptor no es una cuenta propia, no asumir que es transferencia interna: revisar la naturaleza del pago antes de categorizar.
+No reconocer la entrada en Banco Sol como revenue.
 
 ---
 
-## Regla de seguridad
+# Brex
 
-No cambiar una categoría únicamente para conseguir que el banco concilie.
+Movimientos ACH desde Brex pueden ser:
 
-Primero determinar qué ocurrió económicamente.
+- transferencia entre cuentas propias;
+- pago a proveedor;
+- otro movimiento.
 
-La conciliación bancaria debe ser consecuencia de registros correctos, no el objetivo de una reclasificación artificial.
+No clasificar todos los ACH como transferencia interna.
+
+Determinar primero quién recibe económicamente el dinero.
 
 ---
 
-## Fuente viva
+# Guardrails
 
-Los ejemplos de este archivo sirven como referencia.
+No usar Transferencias internas para:
 
-Si existe contradicción entre este documento y:
+- ocultar un gasto;
+- ocultar un ingreso;
+- eliminar diferencias bancarias;
+- compensar una comisión;
+- cuadrar Cash Flow.
 
-`Finanzas Sommos — Workflow y Control`
+La clasificación debe representar el movimiento real.
 
-prevalecen siempre:
+---
 
-1. los extractos bancarios;
-2. la estructura vigente de `Transacciones`;
-3. las reglas activas en `Config` y `Reglas categorización`;
-4. la información actual del Google Sheet.
+# QA
+
+Después de modificar una transferencia revisar:
+
+- `Transacciones`
+- `Bancos`
+- Cash consolidado
+- `Cash Flow`
+- `Balance Sheet`
+
+Confirmar que no afectó:
+
+- revenue;
+- gastos;
+- CxC;
+- CxP.
+
+---
+
+# Regla final
+
+Una transferencia interna cambia:
+
+**dónde está la caja**
+
+pero no cambia:
+
+**cuánta caja consolidada tiene Sommos**
+
+salvo costos reales asociados que deben registrarse separadamente.
