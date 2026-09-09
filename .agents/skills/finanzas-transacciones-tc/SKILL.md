@@ -1,28 +1,67 @@
 ---
 name: finanzas-transacciones-tc
-description: Registra, importa, normaliza y audita transacciones financieras de Sommos; aplica tipos de cambio a USD y prepara movimientos bancarios para conciliación sin duplicar operaciones.
+description: Importa, normaliza, registra y audita movimientos financieros de Sommos; aplica tipos de cambio a USD, evita duplicados, gestiona transferencias y prepara las transacciones para conciliación bancaria sin confundir cash con devengo contable.
 ---
 
 # Finanzas Sommos — Transacciones y TC
 
 ## Propósito
 
-Operar la capa transaccional del modelo financiero de Sommos.
+Operar la capa transaccional y bancaria del workflow financiero de Sommos.
 
 Esta skill se encarga principalmente de:
 
 - importar extractos bancarios;
-- registrar movimientos en `Transacciones`;
+- registrar y actualizar movimientos en `Transacciones`;
 - normalizar ingresos, egresos y transferencias internas;
 - prevenir duplicados;
+- preservar trazabilidad con el extracto original;
 - aplicar tipo de cambio a USD;
-- preservar categorizaciones existentes;
-- preparar correctamente los movimientos para conciliación bancaria;
-- mantener trazabilidad entre extracto, transacción y vistas financieras posteriores.
+- respetar la categorización definida por el sistema;
+- registrar fechas reales de pago/cobro;
+- preparar los movimientos para conciliación bancaria;
+- mantener consistencia entre cash real y las vistas financieras dependientes.
 
-`Transacciones` es la fuente operativa principal del modelo.
+## Principio fundamental
 
-## Archivo principal
+`Transacciones` es la fuente de verdad para:
+
+- movimientos bancarios;
+- cash realizado;
+- pagos;
+- cobros;
+- transferencias;
+- banco/cuenta utilizada;
+- fecha efectiva del movimiento;
+- moneda;
+- monto;
+- conciliación.
+
+`Transacciones` **no es la fuente única del devengo contable**.
+
+El modelo distingue:
+
+`Operative incomes`
+→ devengo de ingresos / monto a facturar
+
+`Real S&A`
+→ devengo de gastos / monto a pagar
+
+`Sueldos 2026`
+→ devengo y planificación de nómina
+
+`Transacciones`
+→ cobros y pagos reales
+
+Por lo tanto:
+
+**cash ≠ devengo**
+
+y una transacción bancaria no debe crear o mover automáticamente un ingreso/gasto de periodo solamente porque el dinero se haya recibido o pagado.
+
+---
+
+# Archivo principal
 
 Google Sheet:
 
@@ -32,237 +71,426 @@ Spreadsheet ID:
 
 `1RXy19WZMPQePflFaFeIIHnh09BpJbwOnk6Wumw8bW4E`
 
-Antes de cualquier escritura, leer en vivo:
+URL:
 
-- pestañas existentes;
-- encabezados actuales;
-- fórmulas;
-- validaciones;
-- filas relacionadas;
-- estructura de bancos y cuentas.
+`https://docs.google.com/spreadsheets/d/1RXy19WZMPQePflFaFeIIHnh09BpJbwOnk6Wumw8bW4E/edit`
+
+Antes de escribir:
+
+1. leer la estructura viva;
+2. leer encabezados actuales;
+3. revisar filas relacionadas;
+4. revisar fórmulas y validaciones;
+5. buscar duplicados;
+6. identificar el banco/cuenta correspondiente.
 
 Nunca asumir posiciones históricas de columnas.
 
-## Alcance principal
+---
 
-Esta skill opera principalmente:
+# Pestañas principales
+
+Esta skill opera principalmente sobre:
 
 - `Transacciones`
 - `TC BCB`
+
+Puede utilizar como staging/auditoría:
+
 - `Importación extractos`
 
-Puede consultar:
+`Importación extractos` es una pestaña técnica y actualmente puede permanecer oculta.
+
+No es una fuente contable independiente.
+
+También puede consultar:
 
 - `Config`
 - `Reglas categorización`
 - `Bancos`
 - `CxC Mensual`
 - `CxP Mensual`
+- `CxP Sueldos`
 - `Operative incomes`
 - `Real S&A`
+- `Sueldos 2026`
+- `Real P&L`
+- `Cash Flow`
+- `Balance Sheet`
 - `Runway Mensual`
 - `Dashboard`
 
-No debe modificar presupuesto, runway o dashboard salvo que sea necesario para reparar una dependencia causada directamente por una modificación transaccional.
+No escribir manualmente en estados financieros desde esta skill salvo que el usuario solicite expresamente reparar una dependencia causada por una modificación transaccional.
 
 ---
 
-# Flujo operativo
+# Estructura actual de Transacciones
 
-Usar este flujo:
+La estructura conocida actualmente contiene campos conceptuales como:
 
-`Extracto → extracción → normalización → deduplicación → Transacciones → TC → categorización → conciliación bancaria → vistas derivadas`
+- Mes
+- Banco / cuenta
+- Fecha
+- Tipo
+- País
+- Categoría
+- Descripción
+- Moneda
+- Monto original
+- TC a USD
+- Monto USD
+- campos de referencia / conciliación
+- Estado pago
+- Fecha vencimiento
+- Responsable / Proyecto
+- identificadores
+- información de transferencias
+- Detalle / soporte
+- Fecha pago / cobro
 
-## 1. Recibir extracto
+La hoja actualmente se extiende aproximadamente de A:V.
 
-Preferencia de formatos:
+Esta información es referencial.
 
-1. CSV
-2. XLSX / XLSM
-3. PDF con texto estructurado
-4. imagen o PDF escaneado como último recurso
+**Leer siempre los encabezados vivos antes de escribir.**
 
-Cuando el extracto tenga:
+---
+
+# Flujo de importación
+
+Usar conceptualmente:
+
+`Extracto`
+→ `extracción`
+→ `normalización`
+→ `deduplicación`
+→ `Transacciones`
+→ `TC`
+→ `categorización`
+→ `conciliación`
+→ `Bancos`
+→ vistas dependientes
+
+---
+
+# 1. Recibir el extracto
+
+Formatos preferidos:
+
+1. XLSX / XLSM / CSV estructurado
+2. PDF con texto seleccionable
+3. imagen o PDF escaneado como último recurso
+
+Cuando el extracto contenga:
 
 - saldo inicial;
 - saldo final;
-- totales de créditos;
-- totales de débitos;
+- total créditos;
+- total débitos;
+- moneda;
+- periodo;
 
-usar esos datos como controles de conciliación.
+usar esos valores como controles de conciliación.
 
-No cargar movimientos directamente sin revisar el contenido completo del extracto.
+No importar parcialmente un archivo sin identificar primero:
 
-## 2. Extraer movimientos
+- cuenta;
+- periodo;
+- moneda;
+- cobertura completa o parcial.
+
+---
+
+# 2. Extraer movimientos
 
 Para cada movimiento identificar, cuando exista:
 
 - fecha;
-- banco o cuenta;
+- banco/cuenta;
 - descripción original;
 - contraparte;
-- identificador bancario;
+- referencia bancaria;
+- identificador;
 - moneda;
-- importe;
-- signo del movimiento;
+- monto;
+- naturaleza entrada/salida;
 - saldo posterior;
-- referencia o glosa.
+- soporte adicional.
 
-Mantener suficiente información de la descripción bancaria para permitir trazabilidad posterior.
+Preservar suficiente texto original para permitir auditoría posterior.
 
-## 3. Normalizar
+No reemplazar una descripción bancaria útil por una descripción demasiado resumida.
 
-En `Transacciones`, los importes deben registrarse como valores positivos.
+---
 
-El sentido económico se expresa mediante `Tipo`.
+# 3. Normalizar
 
-Tipos principales:
+## Importes
+
+La convención actual de `Transacciones` utiliza normalmente:
+
+`Monto original = positivo`
+
+y la dirección económica se expresa mediante:
+
+`Tipo`
+
+Tipos conocidos:
 
 - `Ingreso`
 - `Egreso`
 - `Transferencia interna`
 
-No guardar egresos como números negativos si la estructura vigente usa `Tipo + monto positivo`.
+No convertir egresos en números negativos si la estructura viva utiliza monto positivo + Tipo.
 
-## 4. Deduplicar
+---
 
-Antes de agregar un movimiento, buscar si ya existe.
+# 4. Deduplicación
+
+Nunca cargar un movimiento sin buscar primero si ya existe.
 
 Prioridad de identificación:
 
-1. identificador bancario nativo;
-2. banco + fecha + monto + descripción;
-3. banco + fecha + monto + contraparte;
-4. revisión manual cuando existan movimientos iguales legítimos.
+1. identificador bancario único;
+2. banco/cuenta + fecha + monto + referencia;
+3. banco/cuenta + fecha + monto + descripción;
+4. contraparte + monto + fecha;
+5. revisión manual.
 
-Nunca duplicar un movimiento solamente porque aparece nuevamente en otro archivo o extracto.
+No considerar automáticamente duplicado solamente porque:
 
-Dos operaciones con mismo monto y misma fecha pueden ser legítimamente distintas si tienen identificadores o contrapartes diferentes.
+- tenga el mismo importe;
+- tenga la misma fecha;
+- tenga descripción similar.
 
----
-
-# Transacciones
-
-## Fuente de verdad
-
-`Transacciones` es la fuente operativa central.
-
-Las vistas mensuales y financieras deben derivarse de esta información siempre que corresponda.
-
-No crear una segunda copia manual del mismo movimiento en otra pestaña para hacer cuadrar un reporte.
-
-## Mes y banco
-
-La hoja puede incluir columnas auxiliares como:
-
-- `Mes`
-- `Banco / cuenta`
-
-Estas columnas sirven para ordenar y visualizar movimientos por:
-
-`Mes → Banco / cuenta → Fecha`
-
-No deben alterar el significado económico de la transacción.
-
-Si son fórmulas o campos auxiliares, preservar su lógica existente.
-
-## Fecha
-
-Para movimientos bancarios realizados:
-
-`Fecha = fecha efectiva del extracto`
-
-Para obligaciones o cuentas pendientes que todavía no pasaron por banco:
-
-- conservar la fecha documental correspondiente;
-- utilizar `Fecha vencimiento` para controlar cuándo debería cobrarse o pagarse.
-
-No cambiar una fecha histórica solo para mover un flujo a otro mes.
-
-## Fecha pago / cobro
-
-Cuando exista una obligación previamente registrada como `Pendiente` y posteriormente se pague o cobre:
-
-- actualizar la transacción original;
-- registrar `Fecha pago / cobro`;
-- cambiar el estado a `Pagado/Cobrado`;
-- no crear una segunda transacción para liquidarla, salvo que la estructura vigente requiera explícitamente movimientos separados.
-
-La fecha original del documento debe conservarse.
+Pueden existir transacciones legítimas repetidas.
 
 ---
 
-# Tipos de movimiento
+# Preexistencia de obligaciones
 
-## Ingreso
+Antes de crear una nueva fila por un movimiento bancario:
 
-Usar cuando existe una entrada económica real que constituye ingreso o financiamiento según su categoría.
+1. buscar si existe una fila pendiente que represente la obligación/cobro;
+2. revisar monto;
+3. revisar moneda;
+4. revisar descripción;
+5. revisar vencimiento;
+6. revisar contraparte;
+7. revisar soporte.
 
-Un ingreso `Pendiente` representa una cuenta por cobrar.
+Cuando un movimiento bancario liquide claramente una obligación ya registrada:
 
-Un ingreso `Pagado/Cobrado` representa un movimiento realizado.
+preferir actualizar la obligación existente con:
 
-## Egreso
+- Banco/cuenta;
+- Estado pago;
+- Fecha pago/cobro;
+- información de conciliación;
 
-Usar para pagos, gastos y obligaciones.
+en lugar de crear un duplicado.
 
-Un egreso `Pendiente` representa una cuenta por pagar.
+No unir filas cuando no exista evidencia suficiente de que representan el mismo hecho económico.
 
-Un egreso `Pagado/Cobrado` representa un gasto o salida realizada.
+---
 
-## Transferencia interna
+# Fecha
 
-Usar cuando el dinero se mueve entre cuentas controladas por Sommos.
+## Movimiento bancario nuevo
 
-Ejemplos:
+Para un movimiento directamente importado de un extracto:
 
-- Brex → Meru
-- Meru → BancoSol
-- cuenta de grant → cuenta principal
-- treasury → checking
+`Fecha = fecha efectiva del banco`
+
+## Obligación previamente registrada
+
+Cuando ya existe una obligación documental:
+
+- conservar su fecha original;
+- conservar `Fecha vencimiento`;
+- registrar el movimiento efectivo mediante `Fecha pago / cobro`.
+
+Nunca cambiar la fecha documental para hacer que un gasto o ingreso aparezca en otro mes.
+
+---
+
+# Fecha pago / cobro
+
+`Fecha pago / cobro` representa cuándo ocurrió efectivamente el cash.
+
+Se utiliza para:
+
+- asignar cobros/pagos al mes correcto;
+- conciliación;
+- CxC/CxP;
+- Cash Flow;
+- análisis de caja.
+
+No reemplaza:
+
+- fecha de factura;
+- fecha de devengo;
+- fecha de vencimiento.
+
+---
+
+# Estado de pago
+
+Estados conocidos incluyen:
+
+- `Pendiente`
+- `Pagado/Cobrado`
+
+La estructura viva de `Config` prevalece.
+
+## Regla importante
+
+`Pendiente` no implica automáticamente que el monto deba convertirse en devengo contable.
+
+Una fila pendiente puede utilizarse para seguimiento operacional.
+
+El devengo oficial se determina principalmente desde:
+
+### CxC
+
+`Operative incomes`
+→ `Monto a facturar`
+
+`Transacciones`
+→ `Cobro`
+
+### CxP
+
+`Real S&A`
+→ `Monto a pagar`
+
+`Transacciones`
+→ `Pago`
+
+### Sueldos
+
+`Sueldos 2026`
+→ gasto/devengo
+
+`CxP Sueldos`
+→ obligación/pago/saldo
+
+---
+
+# Ingreso
+
+Usar `Ingreso` cuando exista una entrada económica real o prevista que corresponda a la naturaleza configurada.
+
+Un ingreso realizado puede representar:
+
+- cobro de cliente;
+- grant;
+- interés;
+- financiamiento;
+- otra entrada.
+
+El Tipo `Ingreso` por sí solo no significa ingreso operativo de P&L.
+
+La categoría determina la naturaleza del cash y el devengo puede vivir en otra pestaña.
+
+---
+
+# Egreso
+
+Usar `Egreso` para:
+
+- pagos;
+- gastos bancarios;
+- obligaciones;
+- impuestos;
+- servicios;
+- otros desembolsos.
+
+Un egreso bancario pagado no determina automáticamente el mes del gasto en P&L.
+
+Ejemplo:
+
+una factura de julio puede pagarse en agosto.
+
+El gasto pertenece al devengo correspondiente y el cash pertenece a agosto.
+
+---
+
+# Transferencias internas
+
+Utilizar cuando el dinero se mueve entre cuentas controladas por Sommos.
 
 Una transferencia interna:
 
 - no es ingreso;
 - no es gasto;
-- no debe incrementar ingresos operativos;
-- no debe incrementar burn.
+- no es CxC;
+- no es CxP;
+- no afecta P&L;
+- sí afecta los saldos bancarios.
 
-Debe registrarse con suficiente información para identificar:
+Categoría conocida:
 
-- `Cuenta origen`
-- `Cuenta destino`
-- detalle de la transferencia
+`Transferencias internas`
 
-Para conciliación bancaria:
+Registrar cuando sea posible:
 
-- la cuenta origen recibe una salida;
-- la cuenta destino recibe una entrada.
+- cuenta origen;
+- cuenta destino;
+- referencia;
+- detalle.
 
-Nunca dejar una transferencia sin dirección cuando esa ausencia pueda generar diferencias bancarias.
+No convertir una transferencia entre cuentas propias en ingreso o egreso operativo solamente porque un extracto muestre una entrada o salida.
+
+---
+
+# Pagos agrupados
+
+Una transferencia bancaria puede liquidar múltiples facturas.
+
+No asumir relación uno-a-uno.
+
+Cuando exista soporte documental suficiente, puede ser necesario dividir conceptualmente el movimiento por factura para preservar:
+
+- fecha de factura;
+- mes de devengo;
+- monto de obligación;
+- trazabilidad.
+
+## Caso PPO
+
+Existe un caso histórico validado donde un pago bancario consolidado correspondía a varias facturas mensuales.
+
+La solución utilizada fue separar las facturas manteniendo:
+
+- el monto total bancario;
+- la misma fecha de pago;
+- el detalle individual de cada factura;
+- el mes correcto de devengo.
+
+Nunca realizar este split sin respaldo documental y sin comprobar que:
+
+`SUMA partes = movimiento bancario total`
 
 ---
 
 # Categorización
 
-Consultar `Reglas categorización` y `Config`.
+La lógica de categorización pertenece principalmente a:
 
-Si una transacción ya tiene una categoría válida asignada por el usuario:
+`finanzas-config-categorizacion`
 
-**preservarla.**
+Esta skill debe:
 
-No reemplazar una categorización manual válida simplemente porque una regla automática devolvería otra cosa.
+1. consultar `Reglas categorización`;
+2. respetar categorías válidas existentes;
+3. aplicar reglas activas a movimientos nuevos cuando sea seguro;
+4. usar solamente categorías existentes en `Config`;
+5. mantener `Por categorizar` cuando exista ambigüedad.
 
-Para movimientos nuevos:
+No inventar categorías.
 
-1. intentar regla activa aplicable;
-2. respetar Tipo y condiciones de la regla;
-3. validar que la categoría exista en `Config`;
-4. si no existe una coincidencia suficientemente clara, usar `Por categorizar`.
-
-Nunca inventar una categoría.
-
-La revisión humana prevalece sobre una inferencia automática.
+No reemplazar una categoría manual validada simplemente porque una regla automática encuentre otra coincidencia.
 
 ---
 
@@ -274,160 +502,245 @@ La revisión humana prevalece sobre una inferencia automática.
 
 `Monto USD = Monto original`
 
-## SOL
+---
 
-Mientras la política vigente del Sheet sea:
+# BOB
 
-`TC a USD = 0.28`
+Usar el tipo de cambio oficial vigente registrado en:
 
-entonces:
+`TC BCB`
 
-`Monto USD = Monto SOL × 0.28`
+Regla:
 
-No modificar esta política sin instrucción explícita.
+usar el último TC oficial disponible tal que:
 
-## BOB
+`Fecha TC <= Fecha aplicable`
 
-Usar el TCO oficial registrado en `TC BCB` correspondiente a la fecha de la transacción.
+Nunca utilizar un TC futuro.
 
-Si no existe publicación para esa fecha:
+Para fines de semana o feriados:
 
-usar el último TCO oficial disponible con:
+usar el último valor oficial anterior disponible.
 
-`fecha TC <= fecha transacción`
-
-Nunca usar un TC futuro.
-
-Conversión:
+Conversión conceptual:
 
 `Monto USD = Monto BOB / TC`
 
-## Otras monedas
+salvo que la estructura viva indique una metodología específica para un movimiento documentado.
 
-Usar `TC manual (otras)` únicamente cuando la hoja lo requiera.
+---
+
+# PEN / SOL
+
+Mientras la política viva del modelo utilice:
+
+`TC a USD = 0.28`
+
+mantener esa convención.
+
+No modificarla silenciosamente.
+
+Si `Config` o el modelo vivo cambia la política:
+
+seguir la configuración vigente.
+
+---
+
+# Otras monedas
+
+Utilizar TC manual solamente cuando exista:
+
+- fuente;
+- respaldo;
+- instrucción;
+- convención explícita.
 
 No inventar tipos de cambio.
 
 ---
 
-# Estados de pago
+# Precisión
 
-Estados principales:
+No redondear prematuramente valores fuente.
 
-- `Pendiente`
-- `Pagado/Cobrado`
+Preservar suficiente precisión en:
 
-Reglas:
+- TC;
+- Monto USD;
+- conciliaciones;
+- splits de facturas.
 
-`Ingreso + Pendiente → CxC`
+La presentación visual puede redondearse.
 
-`Egreso + Pendiente → CxP`
+Los cálculos internos deben mantener la precisión necesaria para reproducir los estados financieros.
 
-`Ingreso + Pagado/Cobrado → ingreso realizado`
+Diferencias de motor Excel vs Google Sheets de fracciones de centavo pueden existir.
 
-`Egreso + Pagado/Cobrado → egreso realizado`
-
-Las vistas actuales de cuentas son:
-
-- `CxC Mensual`
-- `CxP Mensual`
-
-Las antiguas pestañas `CxC` y `CxP` ya no deben recrearse.
+No crear ajustes ficticios para eliminarlas.
 
 ---
 
-# Vistas derivadas
+# Importación extractos
 
-Después de registrar o actualizar transacciones, revisar que las vistas relacionadas respondan correctamente.
+`Importación extractos` puede utilizarse como staging/auditoría.
 
-Según el movimiento pueden verse afectadas:
+Actualmente puede mantenerse oculta.
 
-- `CxC Mensual`
-- `CxP Mensual`
-- `Operative incomes`
-- `Real S&A`
-- `Bancos`
-- `Presupuesto`
-- `Runway Mensual`
-- `Dashboard`
+Su función puede incluir:
 
-No escribir manualmente en una vista derivada para corregir un problema que pertenece a `Transacciones`.
+- identificar origen del movimiento;
+- estado de importación;
+- deduplicación;
+- trazabilidad.
 
-Corregir siempre la fuente correcta.
+No utilizarla como segunda fuente de verdad.
+
+Una vez validado el movimiento:
+
+`Transacciones`
+
+es la capa operativa oficial.
 
 ---
 
-# Conciliación posterior a un extracto
+# Conciliación bancaria
 
 Después de importar un extracto:
 
-1. confirmar que todos los movimientos necesarios estén en `Transacciones`;
+1. confirmar que todos los movimientos estén representados;
 2. confirmar que no existan duplicados;
-3. validar Tipo;
-4. validar categorización;
-5. validar moneda y TC;
-6. revisar transferencias internas y su dirección;
-7. comparar ingresos y egresos por banco;
-8. comparar saldo calculado con saldo real del extracto;
-9. investigar cualquier diferencia.
+3. revisar Tipo;
+4. revisar moneda;
+5. revisar TC;
+6. revisar Monto USD;
+7. revisar categorías;
+8. identificar transferencias internas;
+9. revisar filas previamente pendientes liquidadas;
+10. comparar contra `Bancos`.
 
-La regla conceptual es:
+La ecuación conceptual:
 
-`Saldo calculado = Saldo inicial + Entradas - Salidas`
+`Saldo calculado = Saldo inicial + entradas - salidas`
 
-Luego:
+`Diferencia = Saldo real - saldo calculado`
 
-`Diferencia = Saldo final banco - Saldo calculado`
+Una cuenta cerrada debe quedar:
 
-La diferencia esperada de una cuenta conciliada es:
+`Diferencia ≈ 0`
 
-`0`
+dentro de la tolerancia definida por el modelo.
 
-o estar dentro de la tolerancia definida por el modelo.
-
-Nunca crear un movimiento ficticio para lograr diferencia cero.
+Nunca crear un movimiento ficticio para cuadrar el saldo.
 
 ---
 
-# Casos especiales de extractos
+# Bancos
 
-## Reversiones
+`Bancos` es la vista de conciliación y saldo por cuenta.
 
-Si un banco muestra:
+Esta skill puede validar:
 
-- cargo;
-- posterior reversión;
+- saldo inicial;
+- movimientos del mes;
+- saldo calculado;
+- saldo final del extracto;
+- diferencia.
 
-registrar ambos movimientos cuando sean movimientos bancarios reales distintos y necesarios para reproducir el saldo.
+No sobrescribir manualmente una diferencia para mostrar cero.
 
-No eliminar ambos simplemente porque el efecto neto sea cero.
+Investigar la causa.
 
-## Comisiones
+---
 
-Cuando exista una comisión bancaria real:
+# Mes cerrado
 
-- registrarla como movimiento independiente si aparece separada;
-- usar la categoría bancaria correspondiente definida en `Config`.
+El cierre mensual se gestiona principalmente desde:
 
-Si una transferencia enviada y una recibida difieren por una comisión, no asumir automáticamente que la diferencia desapareció.
+`finanzas-cierre-mensual`
 
-Investigar primero el extracto.
+Pero esta skill debe respetar los meses ya cerrados.
 
-## Extractos parciales
+Actualmente agosto de 2026 es un periodo validado/cerrado dentro del modelo.
 
-Si el archivo no cubre todo el mes:
+No modificar movimientos históricos de un mes cerrado sin:
 
-- no declarar el banco completamente conciliado;
-- identificar el período cubierto;
-- señalar que faltan movimientos o cierre completo.
+1. identificar el impacto;
+2. explicar la causa;
+3. releer Bancos;
+4. revisar estados financieros relacionados.
 
-## Pagos agrupados
+---
 
-Una transferencia bancaria puede liquidar varias facturas.
+# Reversiones
 
-No forzar una relación uno-a-uno cuando el documento demuestra un pago consolidado.
+Si el banco muestra:
 
-Mantener trazabilidad suficiente para vincular el pago con las obligaciones correspondientes.
+- cargo real;
+- reversión posterior real;
+
+registrar ambos cuando ambos sean necesarios para reproducir el extracto.
+
+No eliminarlos porque el efecto neto sea cero.
+
+---
+
+# Comisiones bancarias
+
+Si aparece una comisión separada:
+
+registrarla como movimiento independiente.
+
+Categoría esperada cuando corresponda:
+
+`Bank fees`
+
+No confundir con:
+
+- interés;
+- diferencia de cambio;
+- impuesto;
+- transferencia.
+
+---
+
+# Intereses
+
+Un interés acreditado por el banco puede corresponder a:
+
+`Bank interest earned`
+
+Un interés financiero pagado/devengado puede corresponder a:
+
+`Financial expense`
+
+No mezclar con Bank fees.
+
+---
+
+# Grants y financiamiento
+
+Entradas como:
+
+- INNOVATECH;
+- Startup Perú;
+- INCOFIN;
+- FIID Guatemala;
+
+pueden corresponder a:
+
+`Other financing cash flow`
+
+No convertir automáticamente estos movimientos en ingreso operativo.
+
+## Startup Perú
+
+Existe un caso validado de aproximadamente:
+
+`USD 934`
+
+correspondiente a septiembre de 2026.
+
+Debe mantenerse como financiamiento/grant según el modelo y no como ingreso operativo ordinario.
 
 ---
 
@@ -436,78 +749,222 @@ Mantener trazabilidad suficiente para vincular el pago con las obligaciones corr
 - No inventar movimientos.
 - No inventar saldos.
 - No inventar categorías.
-- No inventar bancos.
+- No inventar banco/cuenta.
 - No inventar país.
 - No inventar responsable.
-- No inventar fecha de vencimiento.
-- No inventar tipo de cambio.
+- No inventar vencimiento.
+- No inventar TC.
 - No duplicar operaciones.
-- No borrar movimientos históricos para cuadrar bancos.
-- No convertir transferencias internas en ingresos o gastos.
-- No cambiar categorizaciones manuales válidas sin instrucción.
-- No contar `Pendiente` como realizado.
-- No sobrescribir fórmulas o validaciones innecesariamente.
+- No borrar movimientos históricos para cuadrar Bancos.
+- No modificar devengo para hacer coincidir cash.
+- No convertir transferencias internas en ingresos/gastos.
+- No sobrescribir categorizaciones manuales válidas sin razón.
+- No redondear prematuramente.
+- No modificar un mes cerrado silenciosamente.
 - No depender de posiciones históricas de columnas.
-
-Si existe incertidumbre material, conservar el dato original y señalar qué requiere confirmación.
 
 ---
 
-# QA obligatorio
+# QA obligatorio antes de escribir
 
-Después de cualquier modificación relevante:
+Antes de cualquier modificación relevante:
+
+- [ ] Leer encabezados vivos.
+- [ ] Identificar banco/cuenta.
+- [ ] Revisar periodo del extracto.
+- [ ] Buscar duplicados.
+- [ ] Buscar obligaciones pendientes relacionadas.
+- [ ] Confirmar fecha.
+- [ ] Confirmar moneda.
+- [ ] Confirmar monto.
+- [ ] Confirmar Tipo.
+- [ ] Revisar categoría.
+- [ ] Revisar TC aplicable.
+- [ ] Confirmar si es transferencia interna.
+
+---
+
+# QA obligatorio después de escribir
 
 ## Transacciones
 
-- revisar encabezados actuales;
-- verificar filas escritas;
-- confirmar fechas;
-- confirmar banco;
-- confirmar moneda;
-- confirmar Tipo;
-- confirmar categoría;
-- confirmar estado;
-- confirmar TC;
-- confirmar Monto USD;
-- buscar duplicados.
+Releer las filas modificadas y comprobar:
 
-## Fórmulas
+- Fecha
+- Banco/cuenta
+- Tipo
+- País
+- Categoría
+- Descripción
+- Moneda
+- Monto original
+- TC
+- Monto USD
+- Estado pago
+- Fecha vencimiento
+- Fecha pago/cobro
+- Conciliación
 
-Buscar:
+## Duplicados
+
+Volver a buscar:
+
+- mismo ID;
+- mismo banco;
+- misma fecha;
+- mismo monto;
+- misma referencia.
+
+## Bancos
+
+Si el cambio es bancario:
+
+- revisar saldo calculado;
+- saldo del extracto;
+- diferencia;
+- estado de conciliación.
+
+## Dependencias
+
+Según el movimiento, revisar:
+
+- `CxC Mensual`
+- `CxP Mensual`
+- `CxP Sueldos`
+- `Cash Flow`
+- `Balance Sheet`
+- `Runway Mensual`
+- `Dashboard`
+
+`Operative incomes`, `Real S&A` y `Sueldos 2026` no deben cambiar simplemente por haber registrado cash.
+
+---
+
+# Checks del modelo
+
+Cuando una modificación afecte movimientos relevantes de cash, comprobar que no rompa:
+
+- Cash Flow vs Balance Sheet;
+- saldo bancario;
+- cierre mensual;
+- Dashboard.
+
+Buscar además:
 
 - `#REF!`
 - `#VALUE!`
 - `#N/A`
+- `#DIV/0!`
 - `#ERROR!`
 
-## Bancos
+---
 
-Cuando se haya importado un extracto:
+# Regla de finalización
 
-- verificar saldo inicial;
-- verificar entradas;
-- verificar salidas;
-- verificar saldo final;
-- verificar diferencia;
-- confirmar conciliación.
+Nunca reportar una importación, modificación o conciliación como terminada únicamente porque se ejecutó una escritura.
 
-## Vistas dependientes
+Antes de decir que está lista:
 
-Comprobar las vistas afectadas, especialmente:
+1. releer las filas modificadas;
+2. comprobar que las fórmulas calcularon;
+3. verificar Bancos;
+4. revisar las dependencias relevantes;
+5. confirmar que no se introdujeron errores.
 
-- `CxC Mensual`
-- `CxP Mensual`
-- `Operative incomes`
-- `Real S&A`
-- `Runway Mensual`
-- `Dashboard`
+---
+
+# Coordinación con otras skills
+
+## `finanzas-config-categorizacion`
+
+Usar para:
+
+- catálogos;
+- categorías;
+- reglas automáticas;
+- prioridades;
+- taxonomía.
+
+## `finanzas-cxc-cxp`
+
+Usar para:
+
+- CxC;
+- CxP;
+- grants pendientes;
+- vencimientos;
+- saldos;
+- CxP Sueldos.
+
+## `finanzas-presupuesto-bancos`
+
+Usar para:
+
+- conciliación consolidada de Bancos;
+- presupuesto;
+- Budget vs P&L.
+
+## `finanzas-runway-dashboard`
+
+Usar para:
+
+- runway;
+- escenarios;
+- KPIs;
+- dashboard.
+
+## `finanzas-estados-financieros`
+
+Cuando exista, usar para:
+
+- Real P&L;
+- Cash Flow;
+- Balance Sheet;
+- checks de tres estados.
+
+## `finanzas-cierre-mensual`
+
+Cuando exista, usar para:
+
+- orquestar el cierre completo;
+- comprobar bancos;
+- categorización;
+- conciliación;
+- estados financieros;
+- estado final de cierre.
 
 ---
 
 # Referencias
 
-Consultar solamente las referencias necesarias para cada tarea:
+Consultar solamente cuando la tarea lo requiera:
 
+- `references/tc.md`
+- `references/importacion-extractos.md`
+- `references/transferencias.md`
+
+Si una referencia contradice el Sheet vivo:
+
+prevalece el Google Sheet.
+
+---
+
+# Alcance final
+
+Esta skill debe concentrarse en:
+
+**extracto → movimiento → TC → Transacciones → conciliación**
+
+No debe convertirse en una skill de devengo o estados financieros.
+
+Su función es garantizar que la capa de cash sea:
+
+- completa;
+- precisa;
+- deduplicada;
+- trazable;
+- correctamente convertida;
+- conciliable.
 - `references/tc.md`
 - `references/importacion-extractos.md`
 - `references/transferencias.md`
