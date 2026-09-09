@@ -1,8 +1,8 @@
 interface:
   display_name: "Finanzas Sommos — Transacciones y TC"
-  short_description: "Registra e importa transacciones y aplica la lógica de tipo de cambio a USD del modelo financiero de Sommos."
+  short_description: "Importa y audita movimientos bancarios, TC, transferencias y conciliación de cash de Sommos."
   brand_color: "#4D0B95"
-  default_prompt: "Usa $finanzas-transacciones-tc para registrar o importar transacciones y validar su conversión a USD con las reglas de TC de Sommos."
+  default_prompt: "Usa $finanzas-transacciones-tc para importar o actualizar movimientos en Transacciones, evitar duplicados, aplicar el TC correcto, identificar transferencias internas y validar la conciliación bancaria sin confundir cash con devengo contable."
 
 policy:
   allow_implicit_invocation: true
