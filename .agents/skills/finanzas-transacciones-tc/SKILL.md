@@ -65,15 +65,15 @@ y una transacción bancaria no debe crear o mover automáticamente un ingreso/ga
 
 Google Sheet:
 
-`Finanzas Sommos — Workflow y Control`
+`Finanzas Sommos — Workflow y Control V2.0`
 
 Spreadsheet ID:
 
-`1RXy19WZMPQePflFaFeIIHnh09BpJbwOnk6Wumw8bW4E`
+`1z0ON-50Ps3V9AYACSZxVBe6sNuAuYxE4qwrV2N5tQZY`
 
 URL:
 
-`https://docs.google.com/spreadsheets/d/1RXy19WZMPQePflFaFeIIHnh09BpJbwOnk6Wumw8bW4E/edit`
+`https://docs.google.com/spreadsheets/d/1z0ON-50Ps3V9AYACSZxVBe6sNuAuYxE4qwrV2N5tQZY/edit`
 
 Antes de escribir:
 
@@ -896,13 +896,21 @@ Usar para:
 - saldos;
 - CxP Sueldos.
 
-## `finanzas-presupuesto-bancos`
+## `finanzas-bancos-conciliacion`
 
 Usar para:
 
 - conciliación consolidada de Bancos;
+- saldos bancarios por cuenta;
+- diferencias y cierre bancario.
+
+## `finanzas-presupuesto-vs`
+
+Usar para:
+
 - presupuesto;
-- Budget vs P&L.
+- Budget vs P&L;
+- análisis de variaciones.
 
 ## `finanzas-runway-dashboard`
 
@@ -915,7 +923,7 @@ Usar para:
 
 ## `finanzas-estados-financieros`
 
-Cuando exista, usar para:
+Usar para:
 
 - Real P&L;
 - Cash Flow;
@@ -924,7 +932,7 @@ Cuando exista, usar para:
 
 ## `finanzas-cierre-mensual`
 
-Cuando exista, usar para:
+Usar para:
 
 - orquestar el cierre completo;
 - comprobar bancos;
@@ -965,8 +973,3 @@ Su función es garantizar que la capa de cash sea:
 - trazable;
 - correctamente convertida;
 - conciliable.
-- `references/tc.md`
-- `references/importacion-extractos.md`
-- `references/transferencias.md`
-
-Si el contenido de una referencia histórica contradice el Google Sheet actual, prevalece la estructura viva del Sheet.
